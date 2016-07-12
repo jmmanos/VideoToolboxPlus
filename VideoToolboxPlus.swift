@@ -1,6 +1,5 @@
 //
-//  VideoToolbox+Extensions.swift
-//  LiveStreaming
+//  VideoToolboxPlus.swift
 //
 //  Created by John Manos on 7/1/16.
 //  Copyright © 2016 John Manos. All rights reserved.
@@ -10,7 +9,7 @@ import Foundation
 import VideoToolbox
 
 /**
-VideoToolboxError
+ VideoToolboxError
  
  - propertyNotSupported: The videotoolbox session doesnt support the property.
  - encodeError: The session cant encode the frame.
@@ -178,7 +177,7 @@ extension VTCompressionSession {
      - Throws: 'VideoToolboxError.encodeError' if the pixel buffer cant be encoded.
      */
     public func encode( buffer : CMSampleBuffer ) throws {
-        guard let image:CVImageBuffer = CMSampleBufferGetImageBuffer(buffer) else {
+        guard let image = buffer.imageBuffer else {
             throw VideoToolboxError.errorCreatingImageBuffer
         }
         try encode(buffer: image, presentationTimestamp: buffer.presentationTimeStamp, duration: buffer.duration)
@@ -196,5 +195,91 @@ extension VTCompressionSession {
         guard VTCompressionSessionEncodeFrame(self, buffer, presentationTimestamp, duration, nil, nil, nil) == noErr else {
             throw VideoToolboxError.encodeError
         }
+    }
+}
+
+extension CMSampleBuffer {
+    /**
+     The sample buffer's attachments array.
+     
+     - Parameter createIfNecessary: Creates the attachments array if one is not present. Defaults to false.
+     
+     - Returns: A dictionary whose values are the sample buffer's attachment array.
+     */
+    public func attachmentsArray(_ createIfNecessary : Bool = false) -> Dictionary<NSObject,AnyObject>? {
+        guard let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(self, createIfNecessary),
+            array = unsafeBitCast(CFArrayGetValueAtIndex(attachmentsArray, 0), to: CFDictionary.self) as Dictionary? else {
+                return nil
+        }
+        
+        return array
+    }
+    /// Whether or not the sample buffer depends on other sample buffers.
+    public var dependsOnOthers : Bool {
+        get {
+            guard let array = attachmentsArray(), result = array[kCMSampleAttachmentKey_DependsOnOthers] as? Bool else {
+                return false
+            }
+            
+            return result
+        }
+        set {
+            guard var array = attachmentsArray(true) else { return }
+            array[kCMSampleAttachmentKey_DependsOnOthers] = newValue
+        }
+    }
+    /// The sample buffer's media data buffer.
+    public var dataBuffer : CMBlockBuffer? {
+        get {
+            return CMSampleBufferGetDataBuffer(self)
+        }
+        set {
+            guard let dataBuffer = newValue else { return }
+            
+            CMSampleBufferSetDataBuffer(self, dataBuffer)
+        }
+    }
+    /// The sample buffer's image buffer of media data.
+    public var imageBuffer : CVImageBuffer? {
+        return CMSampleBufferGetImageBuffer(self)
+    }
+    /// The duration of the sample buffer.
+    public var duration : CMTime {
+        return CMSampleBufferGetDuration(self)
+    }
+    /// The format description of the sample buffer.
+    public var formatDescription : CMFormatDescription? {
+        return CMSampleBufferGetFormatDescription(self)
+    }
+    /// The numerically earliest decode timestamp of all the samples in a sample buffer.
+    public var decodeTimeStamp : CMTime {
+        let decodeTimestamp = CMSampleBufferGetDecodeTimeStamp(self)
+        return decodeTimestamp == kCMTimeInvalid ? presentationTimeStamp : decodeTimestamp
+    }
+    /// The numerically earliest decode time value of all the samples in a sample buffer.
+    public var decodeTime : Double {
+        let decodeTimestamp:CMTime = self.decodeTimeStamp
+        return Double(decodeTimestamp.value) / Double(decodeTimestamp.timescale)
+    }
+    /// The numerically earliest presentation timestamp of all the samples in a sample buffer.
+    public var presentationTimeStamp : CMTime {
+        return CMSampleBufferGetPresentationTimeStamp(self)
+    }
+    /// The numerically earliest presentation time value of all the samples in a sample buffer.
+    public var presentationTime : Double {
+        let presentationTimeStamp = self.presentationTimeStamp
+        return Double(presentationTimeStamp.value) / Double(presentationTimeStamp.timescale)
+    }
+    /// Whether or not a sample buffer's data is ready.
+    public var isDataReady : Bool {
+        return CMSampleBufferDataIsReady(self)
+    }
+    /// The number of media samples in a sample buffer.
+    public var numberOfSamples : Int {
+        return CMSampleBufferGetNumSamples(self)
+    }
+    /// The total size in bytes of sample data in the sample buffer. Returns 0 if no sample sizes are present.
+    public var size : Int {
+        return CMSampleBufferGetTotalSampleSize(self)
     }
 }
